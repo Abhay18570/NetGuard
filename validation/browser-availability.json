@@ -1,0 +1,6 @@
+{
+  "driver": "Safari WebDriver",
+  "available": false,
+  "settingsChanged": false,
+  "reason": "Could not create a session: You must enable 'Allow remote automation' in the Developer section of Safari Settings to control Safari via WebDriver."
+}

@@ -1,0 +1,9 @@
+{
+  "notice": "Synthetic notification queue objects only; no security observations inserted.",
+  "node": "v26.8.1",
+  "offers": 10000,
+  "durationMs": 10.832624999999997,
+  "queued": 20,
+  "dedupEntries": 2000,
+  "suppressed": 9980
+}

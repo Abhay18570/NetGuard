@@ -1,0 +1,127 @@
+{
+  "environment": {
+    "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+    "python": "3.14.7"
+  },
+  "notice": "Synthetic offline stress workloads, not observed network traffic. Single local run; not a line-rate guarantee.",
+  "pipeline2000": {
+    "operations": 2000,
+    "totalMs": 1293.0516860360513,
+    "medianMs": 0.38208349906199146,
+    "p95Ms": 1.5999169991118833,
+    "maxMs": 9.422499999345746
+  },
+  "pipelineDrain": {
+    "operations": 1,
+    "totalMs": 0.2700000004551839,
+    "medianMs": 0.2700000004551839,
+    "p95Ms": 0.2700000004551839,
+    "maxMs": 0.2700000004551839
+  },
+  "detectionStatus": {
+    "state": "ready",
+    "failedPackets": 0,
+    "droppedPackets": 0,
+    "latePackets": 0,
+    "pendingPackets": 0,
+    "thresholds": {
+      "claim_window": 60,
+      "request_window": 5,
+      "burst_window": 10,
+      "burst_count": 30,
+      "unsolicited_count": 5,
+      "cooldown": 60,
+      "history_capacity": 4096,
+      "queue_capacity": 2048
+    },
+    "gatewayMappingIds": [],
+    "message": null
+  },
+  "inventoryRows": 2000,
+  "packetBufferRows": 1000,
+  "inventoryPageQueries": {
+    "operations": 30,
+    "totalMs": 40.2150799818628,
+    "medianMs": 1.3082499990559882,
+    "p95Ms": 1.3986249978188425,
+    "maxMs": 1.9521249996614642
+  },
+  "inventorySearchQueries": {
+    "operations": 30,
+    "totalMs": 21.674703999451594,
+    "medianMs": 0.6948334994376637,
+    "p95Ms": 0.7748329990135971,
+    "maxMs": 1.4155829994706437
+  },
+  "duplicateDelivery": {
+    "operations": 1,
+    "totalMs": 17.777624998416286,
+    "medianMs": 17.777624998416286,
+    "p95Ms": 17.777624998416286,
+    "maxMs": 17.777624998416286
+  },
+  "inventoryRowsAfterDuplicates": 2000,
+  "100ConflictPairs": {
+    "operations": 1,
+    "totalMs": 124.76466699808952,
+    "medianMs": 124.76466699808952,
+    "p95Ms": 124.76466699808952,
+    "maxMs": 124.76466699808952
+  },
+  "incidentDrain": {
+    "operations": 1,
+    "totalMs": 1.0352500030421652,
+    "medianMs": 1.0352500030421652,
+    "p95Ms": 1.0352500030421652,
+    "maxMs": 1.0352500030421652
+  },
+  "findings": 100,
+  "incidents": 100,
+  "contentionReads": {
+    "operations": 100,
+    "totalMs": 48.50404198805336,
+    "medianMs": 0.2844164991984144,
+    "p95Ms": 0.375083000108134,
+    "maxMs": 10.516042002564063
+  },
+  "contentionElapsedMs": 48.81470799955423,
+  "overload10000Enqueues": {
+    "operations": 1,
+    "totalMs": 15.000957999291131,
+    "medianMs": 15.000957999291131,
+    "p95Ms": 15.000957999291131,
+    "maxMs": 15.000957999291131
+  },
+  "overloadDrain": {
+    "operations": 1,
+    "totalMs": 561.5874159993837,
+    "medianMs": 561.5874159993837,
+    "p95Ms": 561.5874159993837,
+    "maxMs": 561.5874159993837
+  },
+  "overloadStatus": {
+    "state": "degraded",
+    "failedPackets": 0,
+    "droppedPackets": 7950,
+    "latePackets": 0,
+    "pendingPackets": 0,
+    "thresholds": {
+      "claim_window": 60,
+      "request_window": 5,
+      "burst_window": 10,
+      "burst_count": 30,
+      "unsolicited_count": 5,
+      "cooldown": 60,
+      "history_capacity": 4096,
+      "queue_capacity": 2048
+    },
+    "gatewayMappingIds": [],
+    "message": "Analysis is incomplete; inspect failure, queue-drop, or out-of-order counts."
+  },
+  "storage": {
+    "usedBytes": 2215936,
+    "limitBytes": 1073741824,
+    "configuredBytes": 1073741824,
+    "atCapacity": false
+  }
+}
