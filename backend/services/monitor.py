@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from threading import Event, RLock, Thread
 from uuid import uuid4
 import logging
+import sys
 from backend.capture.engine import ScapyCapture
 from backend.capture.packets import PacketBuffer, parse_arp
 from backend.errors import APIError
@@ -131,11 +132,17 @@ class MonitorService:
             logger.exception('Capture worker failed')
             text = str(error).lower()
             if isinstance(error, PermissionError) or getattr(error, 'errno', None) in (1, 13) or 'permission denied' in text:
-                code, message = 'capture_permission_denied', 'Permission to capture was denied. On macOS, grant the process access to /dev/bpf devices.'
+                code = 'capture_permission_denied'
+                if sys.platform == 'win32':
+                    message = f'Npcap denied capture on {self._interface}: {error}. Check Npcap service state and backend permissions.'
+                elif sys.platform == 'darwin':
+                    message = f'Permission to capture on {self._interface} was denied: {error}. Check access to /dev/bpf devices.'
+                else:
+                    message = f'Permission to capture on {self._interface} was denied: {error}.'
             elif isinstance(error, ImportError):
                 code, message = 'capture_unavailable', 'Scapy or a required capture dependency is unavailable.'
             else:
-                code, message = 'capture_failed', 'Capture failed. Check interface availability, BPF support, and backend logs.'
+                code, message = 'capture_failed', f'Capture failed on {self._interface or "the selected interface"}: {error}'
             with self._lock:
                 self._error = {'code': code, 'message': message}
                 self._transition('error', message)

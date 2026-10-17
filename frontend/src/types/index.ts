@@ -7,7 +7,7 @@ export interface Preferences { networkInterface: string; conflictThreshold: numb
 export type ConnectionState = 'disconnected' | 'loading' | 'connected' | 'error'
 export interface PacketEvent { version: 1; packet: Packet }
 export interface StatusEvent { version: 1; status: MonitorStatus }
-export interface NetworkInterface { index: number; name: string }
+export interface NetworkInterface { index: number; name: string; networkName?: string; description?: string }
 export type MonitorState = 'not_started' | 'starting' | 'running' | 'stopping' | 'stopped' | 'completed' | 'error'
 export interface MonitorStatus { state: MonitorState; captureAvailable: boolean; interface: string | null; startedAt: string | null; reason: string; mode: 'live' | 'offline' | null; sessionId: string | null; error: { code: string; message: string } | null; revision: number; bufferCapacity: number }
 export interface CollectionResponse<T> { items: T[]; total: number; limit: number; offset: number }

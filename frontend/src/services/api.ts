@@ -21,7 +21,7 @@ export const isDeviceEvent = (value: unknown): value is { version: 1; device: De
 export const isTrustEvent = (value: unknown): value is { version: 1; mapping: TrustedMapping; action: string } => record(value) && value.version === 1 && isTrustedMapping(value.mapping) && ['create', 'update', 'verify', 'revoke'].includes(String(value.action))
 export const isDiscoveryEvent = (value: unknown): value is { version: 1; status: DiscoveryStatus } => record(value) && value.version === 1 && isDiscoveryStatus(value.status)
 const isIncident = (value: unknown): value is Incident => record(value) && strings(value, ['id', 'timestamp', 'sourceIp', 'observedMac', 'expectedMac', 'reason', 'status']) && ['Critical', 'High', 'Medium', 'Low'].includes(String(value.severity))
-const isInterface = (value: unknown): value is NetworkInterface => record(value) && integer(value.index) && typeof value.name === 'string' && value.name.length > 0
+const isInterface = (value: unknown): value is NetworkInterface => record(value) && integer(value.index) && typeof value.name === 'string' && value.name.length > 0 && (value.networkName === undefined || typeof value.networkName === 'string') && (value.description === undefined || typeof value.description === 'string')
 function invalidContract(): never { throw new Error('The backend returned an unexpected response. Check API compatibility.') }
 async function request(path: string, signal?: AbortSignal, body?: unknown, options?: { method: string; token: string }): Promise<unknown> {
   try { return (await client.request<unknown>({ url: path, method: options?.method ?? (body === undefined ? 'GET' : 'POST'), data: body, signal, headers: options ? { Authorization: `Bearer ${options.token}` } : undefined })).data }

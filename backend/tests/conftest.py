@@ -15,6 +15,14 @@ def app():
     application.extensions['monitor'].stop()
 
 
+@pytest.fixture(autouse=True)
+def use_portable_interface_fallback(monkeypatch):
+    # Existing suite fixtures model the portable socket.if_nameindex path.
+    # Windows-specific Scapy enumeration has focused tests that override this.
+    from scapy.all import conf
+    monkeypatch.setattr(conf, 'ifaces', {})
+
+
 @pytest.fixture
 def client(app):
     return app.test_client()

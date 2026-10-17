@@ -167,7 +167,7 @@ def test_unexpected_failure_transitions_and_emits(live_app):
     until(lambda: client.get('/api/monitor/status').json['state'] == 'error')
     status = client.get('/api/monitor/status').json
     assert status['error']['code'] == 'capture_failed'
-    assert 'private' not in status['reason']
+    assert 'private capture failure' in status['reason']
     assert any(event['name'] == 'monitor_status' and event['args'][0]['status']['state'] == 'error'
                for event in socket.get_received())
     socket.disconnect()
@@ -256,6 +256,34 @@ def test_engine_opens_only_selected_interface_without_promisc(monkeypatch):
     ScapyCapture().run('en0', stop, ready.set, receive)
     assert parameters == [{'iface': 'en0', 'filter': 'arp', 'promisc': False, 'monitor': False}]
     assert ready.is_set() and len(observed) == 1 and socket.closed
+
+
+def test_windows_discovery_uses_scapy_identifiers_and_descriptions(monkeypatch):
+    from types import SimpleNamespace
+    from backend.discovery.interfaces import discover_interfaces
+    device = SimpleNamespace(name='\\Device\\NPF_{ABC}', index=16,
+                             network_name='Wi-Fi', description='Intel(R) Wi-Fi 6 AX201 160MHz')
+    from scapy.all import conf
+    monkeypatch.setattr(conf, 'ifaces', {'wifi': device})
+    monkeypatch.setattr('backend.discovery.interfaces.sys.platform', 'win32')
+    assert discover_interfaces() == [{'index': 16, 'name': '\\Device\\NPF_{ABC}',
+                                       'networkName': 'Wi-Fi',
+                                       'description': 'Intel(R) Wi-Fi 6 AX201 160MHz'}]
+
+
+def test_engine_passes_resolved_scapy_device_to_npcap(monkeypatch):
+    from scapy.all import conf
+    device = object(); parameters = []
+    class Socket:
+        def select(self, *_): return []
+        def close(self): pass
+    monkeypatch.setattr(conf, 'ifaces', {'wifi': type('Iface', (), {'name': 'Wi-Fi'})()})
+    resolved = next(iter(conf.ifaces.values()))
+    monkeypatch.setattr(conf, 'L2listen', lambda **kwargs: (parameters.append(kwargs) or Socket()))
+    stop = Event(); stop.set()
+    ScapyCapture().run('Wi-Fi', stop, lambda: None, lambda _: None)
+    assert parameters[0]['iface'] is resolved
+    assert parameters[0]['filter'] == 'arp' and parameters[0]['promisc'] is False
 
 
 def test_engine_closes_on_receive_failure(monkeypatch):
@@ -372,21 +400,53 @@ def test_allowed_origin_can_start(live_app):
     assert response.status_code == 200
 
 
-def test_socket_read_error_returning_none_is_failure(monkeypatch):
+def test_windows_empty_reads_keep_monitor_running_and_stoppable(monkeypatch):
     from scapy.all import conf
-    closed = Event()
+    closed = Event(); reads = []
     class Socket:
         def select(self, *_): return [self]
-        def recv(self): return None
+        def recv(self):
+            reads.append(None)
+            return None
         def close(self): closed.set()
     monkeypatch.setattr(conf, 'L2listen', lambda **_: Socket())
     monitor = MonitorService()
     try:
-        try:
-            monitor.start('en0')
-        except APIError:
-            pass
+        status = monitor.start('en0')
+        assert status['state'] == 'running'
+        time.sleep(0.04)
+        assert monitor.status()['state'] == 'running'
+        assert monitor.buffer.page()['total'] == 0
+        assert monitor.stop()['state'] == 'stopped'
+        assert closed.is_set()
+        assert len(reads) >= 2
+    finally:
+        monitor.stop()
+
+
+def test_windows_socket_open_failure_never_reports_running(monkeypatch):
+    from scapy.all import conf
+    monkeypatch.setattr(conf, 'L2listen', lambda **_: (_ for _ in ()).throw(OSError('Npcap open failed')))
+    monitor = MonitorService()
+    with pytest.raises(APIError):
+        monitor.start('Wi-Fi')
+    assert monitor.status()['state'] == 'error'
+    assert 'Npcap open failed' in monitor.status()['error']['message']
+
+
+def test_windows_socket_read_exception_still_fails_capture(monkeypatch):
+    from scapy.all import conf
+    closed = Event()
+    class Socket:
+        def select(self, *_): return [self]
+        def recv(self): raise OSError('Npcap device disconnected')
+        def close(self): closed.set()
+    monkeypatch.setattr(conf, 'L2listen', lambda **_: Socket())
+    monitor = MonitorService()
+    try:
+        assert monitor.start('Wi-Fi')['state'] == 'running'
         until(lambda: monitor.status()['state'] == 'error')
+        assert 'Npcap device disconnected' in monitor.status()['error']['message']
         assert closed.is_set()
     finally:
         monitor.stop()
