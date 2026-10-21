@@ -11,11 +11,12 @@ export function DetectionSummary() {
     return { items: [{ live, offline, status }], total: 1, limit: 1, offset: 0 }
   }, [])
   const result = useCollection(loader, revision); const data = result.items[0]
-  return <Card title="Detection findings" description="Suspicious observations · Investigation required" action={<Link className="text-link" to="/threats">View evidence</Link>}>
-    {result.error ? <p className="feedback" role="alert">Findings unavailable. <button onClick={result.retry}>Retry</button></p> : !data ? <p className="feedback">Loading findings…</p> : <>
-      <div className="toolbar"><Badge>{data.live.total} live findings</Badge><Badge>{data.offline.total} offline replay findings</Badge></div>
+  const latest = data ? [...data.live.items, ...data.offline.items].sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp)).slice(0, 4) : []
+  return <Card title="Threat summary" action={<Link className="text-link" to="/threats">View findings</Link>}>
+    {result.error ? <p className="feedback" role="alert">Findings unavailable. <button onClick={result.retry}>Retry</button></p> : !data ? <p className="feedback">Loading…</p> : <>
+      <div className="toolbar compact-summary"><Badge>{data.live.total} live</Badge><Badge>{data.offline.total} offline</Badge></div>
       {data.status.message && <p className="feedback" role="alert">{data.status.message}</p>}
-      {data.live.items.length ? <ul>{data.live.items.slice(0, 3).map(item => <li key={item.id}><Badge>{item.severity}</Badge> {item.sourceIp} · {item.ruleId} · {item.status}</li>)}</ul> : <EmptyState title="No live findings recorded" description="An empty result does not establish network safety. Offline findings can be reviewed separately in Threat Detection." />}
+      {latest.length ? <ul className="threat-summary-list">{latest.map(item => <li key={item.id}><Badge tone={item.severity === 'High' ? 'danger' : ''}>{item.severity}</Badge><span>{item.sourceIp} · {item.ruleId}</span><Badge tone={item.source === 'live' ? 'green' : 'muted'}>{item.source === 'live' ? 'Live' : 'Offline'}</Badge></li>)}</ul> : <EmptyState title="No findings recorded" />}
     </>}
   </Card>
 }

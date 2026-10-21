@@ -1,20 +1,36 @@
-import { useAlerts } from '../context/useAlerts'
-import { useState } from 'react'
-import { DetectionSummary } from '../components/DetectionSummary'
+import { useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { Activity, ArrowUpRight, CircleHelp, Monitor, Network, Radio, Shield, ShieldAlert, SlidersHorizontal, Workflow } from 'lucide-react'
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Badge, Card, EmptyState, PageTitle } from '../components/ui'
+import { Activity, Monitor, Network, Radio, ShieldAlert } from 'lucide-react'
+import { Badge, Card, DataTable, EmptyState, PageTitle } from '../components/ui'
+import { DetectionSummary } from '../components/DetectionSummary'
 import { useMonitor } from '../context/useMonitor'
-import { statusLabel } from '../services/monitorState'
+import { useCollection } from '../hooks/useCollection'
+import { useDetectionRevision } from '../hooks/useDetection'
+import { useIncidentRefresh } from '../hooks/useIncidents'
+import { getFindings } from '../services/detection'
+import { incidentApi } from '../services/incidents'
+
 export default function Overview() {
   const { data, connection, monitor, inventoryError } = useMonitor()
-  const { summary } = useAlerts()
-  const [range, setRange] = useState('1h')
-  return <><PageTitle title="Network overview" description="A clear view of your network. Every device, every signal." action={<Link className="button" to="/settings"><SlidersHorizontal size={16} />Configure monitoring</Link>} />
-    <section className="status-hero"><div className="hero-copy"><Badge tone="muted"><span className="tiny-dot" />{statusLabel(monitor, connection === 'connected')}</Badge><h2>{monitor?.mode === 'offline' ? 'An offline view of recorded traffic.' : 'Your network, observed passively.'}</h2><p>{connection === 'connected' ? 'Your API is connected. Start passive capture on a selected interface or review a clearly labeled offline PCAP in the ARP monitor.' : 'Your security workspace is ready. Connect the API and configure your interface to prepare for future monitoring.'}</p><div className="hero-links"><Link to="/settings">Set up your workspace <ArrowUpRight size={16} /></Link><span>{data.packets.length} retained {monitor?.mode === 'offline' ? 'offline' : 'packet'} records</span></div></div><div className="radar" aria-hidden="true"><div className="radar-ring ring-one" /><div className="radar-ring ring-two" /><div className="radar-ring ring-three" /><div className="radar-cross cross-horizontal" /><div className="radar-cross cross-vertical" /><div className="radar-shield"><Shield size={40} /></div><span className="radar-label">{connection === 'connected' ? 'PASSIVE ARP WORKSPACE' : 'AWAITING CONNECTION'}</span></div></section>
-    <div className="stats-grid">{[{ label: 'Monitoring status', value: statusLabel(monitor, connection === 'connected'), note: monitor?.mode === 'offline' ? 'Imported PCAP · Not live data' : 'Passive capture · Evidence analysis', icon: Activity }, { label: 'Observed mappings', value: connection === 'connected' && !inventoryError ? String(data.deviceTotal) : '—', note: 'Live and offline inventory', icon: Monitor }, { label: 'Finding evidence', value: 'Review', note: 'Live / offline totals below', icon: Network }, { label: 'New live alerts', value: summary ? String(summary.counts.live.New) : '—', note: 'Offline alerts listed separately', icon: ShieldAlert }].map(({label,value,note,icon: Icon}) => <section className="stat-card" key={label}><div className="stat-top"><span>{label}</span><Icon size={18} /></div><div className={`stat-value ${label === 'Monitoring status' ? 'text-value' : ''}`}>{value}</div><div className="stat-note"><span className="tiny-dot" />{note}</div></section>)}</div>
-    <div className="overview-grid"><Card title="Network activity" description="ARP traffic and suspicious mapping trends" action={<div className="segmented" aria-label="Chart time range">{['1h','6h','24h'].map(value => <button key={value} aria-pressed={range === value} className={range === value ? 'selected' : ''} onClick={() => setRange(value)}>{value}</button>)}</div>}><div className="chart-legend"><span><i />ARP packets</span><span><i className="amber" />Suspicious mappings</span><span className="chart-window">Last {range}</span></div><div className="chart-container"><ResponsiveContainer width="100%" height="100%"><AreaChart data={data.activity} margin={{ top: 15, right: 20, bottom: 5, left: -25 }}><defs><linearGradient id="traffic" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity={0.25} /><stop offset="100%" stopColor="#34d399" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="#202c37" strokeDasharray="3 5" vertical={false} /><XAxis dataKey="time" tick={{ fill: '#778593', fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis domain={[0, 'auto']} tick={{ fill: '#778593', fontSize: 11 }} axisLine={false} tickLine={false} /><Tooltip contentStyle={{ background: '#111b26', borderColor: '#263442', borderRadius: 8 }} /><Area dataKey="packets" stroke="#34d399" fill="url(#traffic)" /><Area dataKey="suspicious" stroke="#e6ad5c" fill="transparent" /></AreaChart></ResponsiveContainer>{!data.activity.length && <div className="chart-empty"><Activity size={23} /><strong>Activity aggregation is not enabled</strong><span>View observed records in the Live ARP Monitor.</span></div>}</div><div className="card-foot"><CircleHelp size={13} /> Historical chart aggregation is not enabled. Packet observations are available in the ARP monitor.</div></Card>
-    <Card title="Monitoring readiness" description="Your path to network visibility" action={<Badge>{connection === 'connected' ? 1 + (monitor?.interface ? 1 : 0) + (monitor?.state === 'running' && monitor.mode === 'live' ? 1 : 0) : 0} / 3</Badge>}><div className="readiness-list">{[['01','Select a network interface','Choose the adapter to observe.'],['02','Connect the backend',connection === 'connected' ? 'API connected; choose an interface.' : 'Enable the monitoring data source.'],['03','Start a monitoring session','Review real network observations.']].map(([number,title,copy]) => <div className="readiness-item" key={number}><span className="step-number">{number}</span><div><h3>{title}</h3><p>{copy}</p></div><span className="step-circle" /></div>)}</div><Link className="readiness-link" to="/settings">Open configuration <ArrowUpRight size={15} /></Link><div className="inline-note"><Workflow size={16} /><span>Passive detection is available. Findings require investigation; defense actions are not enabled.</span></div></Card></div>
-    <div className="overview-grid lower-grid"><DetectionSummary /><Card title="Discovered devices" description="Your network inventory, in one place" action={<Link className="text-link" to="/devices">View devices <ArrowUpRight size={14} /></Link>}><EmptyState icon={Radio} title={data.deviceTotal ? `${data.deviceTotal} observed mappings` : 'No device mappings observed'} description="Review live and clearly labeled offline observations in Network Devices." /></Card></div></>
+  const detection = useCollection(useCallback(async signal => ({ items: [{ total: (await getFindings('all', 'all', '', 0, signal)).total }], total: 1, limit: 1, offset: 0 }), []), useDetectionRevision())
+  const incidents = useCollection(useCallback(async signal => ({ items: [{ total: (await incidentApi.list('all', 'all', 'all', '', 0, signal)).total }], total: 1, limit: 1, offset: 0 }), []), useIncidentRefresh().revision)
+  const recent = [...data.packets].sort((a, b) => b.sequence - a.sequence).slice(0, 5)
+  const monitorValue = connection !== 'connected' ? 'Disconnected' : monitor?.state === 'running' ? monitor.mode === 'offline' ? 'Offline analysis' : 'Monitoring' : monitor?.state === 'error' ? 'Capture failed' : monitor?.state === 'stopped' ? 'Stopped' : monitor?.state === 'starting' ? 'Starting' : monitor?.state === 'stopping' ? 'Stopping' : monitor?.state === 'completed' ? 'Completed' : 'Ready'
+  const monitorNote = connection !== 'connected' ? 'Backend unavailable' : monitor?.mode === 'offline' ? 'Imported PCAP' : monitor?.interface || 'Select an interface'
+  const stats = [
+    { label: 'Monitoring status', value: monitorValue, note: monitorNote, icon: Activity },
+    { label: 'Network devices', value: connection === 'connected' && !inventoryError ? String(data.deviceTotal) : '—', note: 'Observed mappings', icon: Monitor },
+    { label: 'Threats detected', value: detection.items[0] ? String(detection.items[0].total) : '—', note: 'Suspicious findings', icon: ShieldAlert },
+    { label: 'Total incidents', value: incidents.items[0] ? String(incidents.items[0].total) : '—', note: 'Correlated investigations', icon: Network },
+  ]
+  return <>
+    <PageTitle title="Network Overview" action={<Link className="button" to="/monitor"><Radio size={15}/>Start Monitoring</Link>} />
+    <div className="stats-grid compact-stats">{stats.map(({ label, value, note, icon: Icon }) => <section className="stat-card" key={label}><div className="stat-top"><span>{label}</span><Icon size={17}/></div><div className={`stat-value ${label === 'Monitoring status' ? 'text-value' : ''}`}>{value}</div><div className="stat-note">{note}</div></section>)}</div>
+    <div className="overview-grid overview-bottom">
+      <Card title="Recent activity" action={<Link className="text-link" to="/monitor">View monitor</Link>}>
+        {recent.length ? <DataTable headings={['Time', 'Source', 'Sender IP', 'Operation']} hasRows empty={<EmptyState title="No activity yet"/>}>{recent.map(packet => <tr key={packet.id}><td title={packet.timestamp}>{new Date(packet.timestamp).toLocaleTimeString()}</td><td><Badge tone={packet.source === 'live' ? 'green' : 'muted'}>{packet.source === 'live' ? 'Live' : 'Offline'}</Badge></td><td className="mono">{packet.senderIp}</td><td>{packet.operation}</td></tr>)}</DataTable> : <EmptyState title="No activity yet" description="Start monitoring to see ARP packets here."/>}
+      </Card>
+      <DetectionSummary />
+    </div>
+  </>
 }

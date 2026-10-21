@@ -3,8 +3,18 @@ import { Radio, Square, Upload } from 'lucide-react'
 import { Badge, Card, DataTable, EmptyState, PageTitle, SearchInput } from '../components/ui'
 import { useMonitor } from '../context/useMonitor'
 import { api } from '../services/api'
-import { statusLabel } from '../services/monitorState'
+
 function savedInterface() { try { const value = JSON.parse(localStorage.getItem('netguard.preferences.v1') || '{}').networkInterface; return typeof value === 'string' ? value : '' } catch { return '' } }
+function shortStatus(connected: boolean, state?: string, mode?: string | null) {
+  if (!connected) return 'Disconnected'
+  if (state === 'running') return mode === 'offline' ? 'Offline analysis' : 'Monitoring'
+  if (state === 'error') return 'Capture failed'
+  if (state === 'stopped') return 'Stopped'
+  if (state === 'starting') return 'Starting'
+  if (state === 'stopping') return 'Stopping'
+  if (state === 'completed') return 'Completed'
+  return 'Ready'
+}
 export default function Monitor() {
   const { data, monitor, interfaces, connection, streamConnected, refresh } = useMonitor()
   const [query, setQuery] = useState(''); const [operation, setOperation] = useState('All operations')
@@ -14,22 +24,34 @@ export default function Monitor() {
   const selected = interfaces.some(item => item.name === networkInterface)
   const connected = connection === 'connected'
   const rows = data.packets.filter(row => `${row.senderIp} ${row.senderMac} ${row.targetIp} ${row.targetMac}`.toLowerCase().includes(query.toLowerCase()) && (operation === 'All operations' || row.operation === operation))
+  const emptyTitle = query || operation !== 'All operations' ? 'No matching packets' : busy && monitor?.mode === 'live' ? 'Monitoring — waiting for ARP traffic' : monitor?.state === 'error' ? 'Capture failed' : !connected ? 'Disconnected' : 'Ready to monitor'
+  const emptyDescription = query || operation !== 'All operations' ? 'Try another search or operation.' : busy && monitor?.mode === 'live' ? 'Packets appear when ARP traffic is observed.' : monitor?.state === 'error' ? 'Review the capture error above.' : 'Select an interface and start capture.'
   async function action(run: () => Promise<unknown>) {
     setPending(true); setError('')
-    try { await run() } catch (cause) { setError(cause instanceof Error ? cause.message : 'The monitoring request failed.') }
+    try { await run() } catch (cause) { setError(cause instanceof Error ? cause.message : 'The request failed.') }
     finally { await refresh(); setPending(false) }
   }
   function importPcap(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]; event.target.value = ''
     if (!file) return
-    if (!file.name.toLowerCase().endsWith('.pcap') || file.size > 5 * 1024 * 1024) { setError('Choose a classic .pcap file up to 5 MiB. PCAPNG is not supported.'); return }
+    if (!file.name.toLowerCase().endsWith('.pcap') || file.size > 5 * 1024 * 1024) { setError('Choose a classic .pcap file up to 5 MiB.'); return }
     void action(() => api.replayPcap(file))
   }
-  return <><PageTitle title="Live ARP monitor" description="Passively observe ARP requests and replies on your selected interface." action={<div className="monitor-actions"><button className="button" disabled={pending || busy || !connected || !selected || !monitor?.captureAvailable} onClick={() => void action(() => api.startMonitoring(networkInterface))}><Radio size={16} />Start capture</button><button className="button secondary" disabled={pending || !busy} onClick={() => void action(api.stopMonitoring)}><Square size={14} />Stop</button></div>} />
-    <Card title="Capture session" description="Capture is receive-only. Findings are analyzed separately; NetGuard performs no network actions." action={<Badge tone={monitor?.mode === 'offline' ? 'muted' : ''}>{statusLabel(monitor, connected)}</Badge>}><div className="toolbar"><label className="field">Local network interface<select aria-label="Capture interface" value={selected ? networkInterface : ''} disabled={busy || pending || !connected} onChange={event => setNetworkInterface(event.target.value)}><option value="">Select an interface explicitly</option>{interfaces.map(item => <option key={`${item.index}-${item.name}`} value={item.name}>{item.networkName || item.name}{item.description ? ` — ${item.description}` : item.networkName && item.name !== item.networkName ? ` (${item.name})` : ""}</option>)}</select></label><label className={`button secondary upload-button ${pending || busy || !connected ? 'disabled' : ''}`}><Upload size={15} />Import offline PCAP<input aria-label="Import offline PCAP" type="file" accept=".pcap" disabled={pending || busy || !connected} onChange={importPcap} /></label></div><div className="card-foot">Classic Ethernet PCAP · Maximum 5 MiB / 10,000 records · Replay is offline at 20 packets/second</div></Card>
+  return <>
+    <PageTitle title="Live ARP Monitor" />
+    <section className="card monitor-control-bar" aria-label="Monitoring controls">
+      <label className="field">Network interface<select aria-label="Network interface" value={selected ? networkInterface : ''} disabled={busy || pending || !connected} onChange={event => setNetworkInterface(event.target.value)}><option value="">Select an interface</option>{interfaces.map(item => <option key={`${item.index}-${item.name}`} value={item.name}>{item.networkName || item.name}{item.description ? ` — ${item.description}` : item.networkName && item.name !== item.networkName ? ` (${item.name})` : ''}</option>)}</select></label>
+      <div className="monitor-actions"><button className="button" disabled={pending || busy || !connected || !selected || !monitor?.captureAvailable} onClick={() => void action(() => api.startMonitoring(networkInterface))}><Radio size={15}/>Start Capture</button><button className="button secondary" disabled={pending || !busy} onClick={() => void action(api.stopMonitoring)}><Square size={14}/>Stop Capture</button></div>
+      <div className="monitor-readout"><Badge tone={monitor?.state === 'running' && monitor.mode === 'live' ? 'green' : monitor?.mode === 'offline' ? 'muted' : ''}>{shortStatus(connected, monitor?.state, monitor?.mode)}</Badge><span>{data.packets.length} packets</span></div>
+      <label className={`button secondary upload-button ${pending || busy || !connected ? 'disabled' : ''}`} title="Classic Ethernet PCAP, up to 5 MiB"><Upload size={15}/>Import PCAP<input aria-label="Import offline PCAP" type="file" accept=".pcap" disabled={pending || busy || !connected} onChange={importPcap}/></label>
+    </section>
     {error && <div className="error-banner" role="alert">{error}</div>}
-    {monitor?.error && <div className="error-banner" role="alert">{monitor.error.message}</div>}
-    {monitor?.mode === 'offline' && <div className="notice"><Upload size={18} /><p><strong>Offline PCAP data.</strong> These records came from an imported file, not this network. Original packet timestamps are preserved.</p></div>}
-    <Card title="Packet stream" description={connected ? monitor?.reason || 'Monitoring has not started.' : 'Connection unavailable. Displayed records are retained history; session status is unconfirmed.'} action={<Badge>{streamConnected ? 'Stream connected' : 'Stream disconnected'}</Badge>}><div className="toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search IP or MAC address…" /><select aria-label="ARP operation" value={operation} onChange={event => setOperation(event.target.value)}>{['All operations','Request','Reply'].map(value => <option key={value}>{value}</option>)}</select></div><DataTable headings={['Timestamp','Source / Interface','Sender IP','Sender MAC','Target IP','Target MAC','Operation','Detection status']} hasRows={!!rows.length} empty={<EmptyState title={query || operation !== 'All operations' ? 'No matching packets' : busy ? 'Waiting for ARP packets' : 'No packets in this session'} description="Start capture on a selected local interface or import an offline PCAP. A quiet network may produce no ARP packets." />}>{rows.map(row => <tr key={row.id}><td>{row.timestamp}</td><td><Badge tone={row.source === 'offline' ? 'muted' : 'green'}>{row.source === 'offline' ? 'Offline PCAP' : `Live · ${row.interface}`}</Badge></td><td className="mono">{row.senderIp}</td><td className="mono">{row.senderMac}</td><td className="mono">{row.targetIp}</td><td className="mono">{row.targetMac}</td><td>{row.operation}</td><td><Badge>{row.status}</Badge></td></tr>)}</DataTable><div className="card-foot">{data.packets.length} retained in this view · Latest 500 displayed · Backend retains up to {monitor?.bufferCapacity ?? 1000} · New sessions clear prior records</div></Card></>
+    {!error && monitor?.error && <div className="error-banner" role="alert">{monitor.error.message}</div>}
+    {connected && monitor && !monitor.captureAvailable && !monitor.error && <p className="feedback compact-feedback" role="status">{monitor.reason}</p>}
+    {monitor?.mode === 'offline' && <p className="offline-note"><Badge tone="muted">Offline analysis</Badge> Imported records are not live network traffic.</p>}
+    <Card title="Packet stream" action={<Badge tone={streamConnected ? 'green' : ''}>{streamConnected ? 'Connected' : 'Disconnected'}</Badge>}>
+      <div className="toolbar"><SearchInput value={query} onChange={setQuery} placeholder="Search IP or MAC"/><select aria-label="ARP operation" value={operation} onChange={event => setOperation(event.target.value)}>{['All operations','Request','Reply'].map(value => <option key={value}>{value}</option>)}</select></div>
+      <DataTable headings={['Time','Source','Sender IP','Sender MAC','Target IP','Target MAC','Operation','Status']} hasRows={!!rows.length} empty={<EmptyState title={emptyTitle} description={emptyDescription}/>}>{rows.map(row => <tr key={row.id}><td title={row.timestamp}><time dateTime={row.timestamp}>{new Date(row.timestamp).toLocaleTimeString()}</time></td><td><Badge tone={row.source === 'live' ? 'green' : 'muted'}>{row.source === 'live' ? 'Live' : 'Offline'}</Badge></td><td className="mono">{row.senderIp}</td><td className="mono">{row.senderMac}</td><td className="mono">{row.targetIp}</td><td className="mono">{row.targetMac}</td><td><Badge tone={row.operation === 'Reply' ? 'muted' : ''}>{row.operation}</Badge></td><td><Badge>{row.status}</Badge></td></tr>)}</DataTable>
+    </Card>
+  </>
 }
-
