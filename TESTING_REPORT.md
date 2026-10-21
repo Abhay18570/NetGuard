@@ -1,5 +1,36 @@
 # Phase 8 testing report
 
+## Phase 10 validation update
+
+Validation date: 2026-10-21. Host: Windows, Python 3.12, Node/npm installed; backend tests use the repository `.venv`. No live capture socket was opened.
+
+| Check | Result |
+|---|---|
+| Full backend pytest suite | **354 passed**, 0 failed |
+| Frontend Node tests | **61 passed**, 0 failed, including Analytics static rendering |
+| TypeScript and Vite production build | **Passed**; Vite reports one minified JS chunk above 500 kB |
+| Oxlint and ESLint | **Passed**, no lint warnings |
+| Python compileall | **Passed** |
+| PCAP/PCAPNG upload, parser bounds, metadata extraction, session comparison, admin-approved baseline and audit | Covered by analytics tests; no payload retention asserted |
+
+PCAPNG was generated in the test and contains one Ethernet/IPv4/TCP SYN packet. The classic PCAP test uses the checked-in ARP fixture. These are controlled test inputs and not real-world detection evaluation. The parser time budget is cooperative and cannot preempt one in-progress Scapy decode. No baseline learning, model training, significance testing, PDF generation, or labeled-data metrics are claimed.
+
+## Phase 9 validation update
+
+Validation date: 2026-10-21. Host: Windows, Python 3.12, Node/npm installed; backend tests used the repository `.venv` and in-memory SQLite. No live capture socket was opened.
+
+| Check | Result |
+|---|---|
+| New analytics backend tests | **4 passed** |
+| Full backend pytest suite | **349 passed** |
+| Frontend Node test suite | **61 passed**, 0 failed; includes Analytics static rendering |
+| TypeScript and Vite production build | **Passed**; 2,595 modules transformed, with Vite warning about a >500 kB bundle chunk |
+| Oxlint and ESLint | **Passed**, no lint warnings |
+| Python compileall | **Passed** |
+| Live capture, browser interaction, anomaly evaluation on labelled data | Not run / unavailable |
+
+The analytics suite covers empty data, duplicate packet-ID persistence, time-bucket boundaries, sender IP–MAC changes, high-volume queue processing, JSON/CSV reporting, and offline replay isolation from live inventory and trust. The later backend rerun includes SQL-side summary aggregation and finding breakdowns. Existing Phase 8 validation data below is preserved as historical host/run evidence.
+
 ## Automated results
 
 Validation date: 2026-10-09. Host: macOS 26.5, arm64; Python 3.14.7; Node 26.8.1; Vite 8.3.4. All test databases were in memory or isolated temporary SQLite files. No live capture socket was opened for these tests.

@@ -18,6 +18,8 @@ from backend.services.alerts import AlertService
 from backend.detection.service import DetectionService
 from backend.incidents.service import IncidentService
 from backend.incidents.routes import incident_api
+from backend.analytics.service import AnalyticsService
+from backend.analytics.routes import analytics_api
 
 
 def create_app(config=None):
@@ -60,10 +62,20 @@ def create_app(config=None):
     app.extensions['inventory'] = inventory
     detection = DetectionService(database, publish, app.config['DETECTION_THRESHOLDS'], app.config['DETECTION_GATEWAY_MAPPING_IDS'])
     app.extensions['detection'] = detection
+    analytics = AnalyticsService(database, app.config.get('ANALYTICS_QUEUE_CAPACITY', 10000))
+    app.extensions['analytics'] = analytics
 
     def observe(packet):
+        analytics.enqueue(packet)
         detection.enqueue(packet)
         inventory.ingest(packet)
+
+    original_publish = publish
+
+    def publish(event, payload):
+        original_publish(event, payload)
+        if event == 'monitor_status':
+            analytics.session_status(payload.get('status', {}))
 
     app.extensions['monitor'] = MonitorService(
         emit=publish,
@@ -81,7 +93,7 @@ def create_app(config=None):
             origin = request.headers.get('Origin')
             if origin is not None and origin not in app.config['CORS_ORIGINS']:
                 raise APIError('origin_not_allowed', 'This request origin is not allowed.', 403)
-        if request.path == '/api/monitor/replay':
+        if request.path in ('/api/monitor/replay', '/api/analytics/pcap/analyze'):
             request.max_content_length = app.config['PCAP_MAX_BYTES'] + 64 * 1024
 
     register_error_handlers(app)
@@ -89,6 +101,7 @@ def create_app(config=None):
     app.register_blueprint(trust_api)
     app.register_blueprint(alert_api)
     app.register_blueprint(incident_api)
+    app.register_blueprint(analytics_api)
 
     @app.after_request
     def no_store(response):

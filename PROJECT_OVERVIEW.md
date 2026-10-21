@@ -13,6 +13,8 @@ flowchart LR
   C --> D[Bounded packet buffer]
   C --> E[Observed mapping inventory]
   C --> F[Bounded detection queue]
+  C --> P[Bounded analytics queue]
+  P --> Q[ARP aggregates and statistical signals]
   F --> G[Finding + alert: atomic transaction]
   G --> H[Incident correlation and audit]
   I[Explicit verified mappings] --> F
@@ -20,6 +22,7 @@ flowchart LR
   G --> J
   H --> J
   J --> K[Flask REST]
+  Q --> J
   D --> K
   K --> L[React dashboard]
   H --> M[Socket.IO events]
@@ -40,7 +43,8 @@ React 19, TypeScript, Vite, React Router, Lucide and Recharts provide the dashbo
 | `backend/database` | Additive schema initialization, foreign keys, constraints, serialized transactions, storage ceiling |
 | `backend/host_guard.py` | Loopback Host validation before REST and Socket.IO |
 | `frontend/src/services`, `context`, `hooks` | Typed adapters, bounded events, reconnect reconciliation, local notification preferences |
-| `frontend/src/pages` | Overview, Monitor, Devices, Threats, Incidents, Defense, Settings |
+| `backend/analytics` | Idempotent ARP observations, filtered aggregates, time buckets, frequency heuristic, JSON/CSV reports |
+| `frontend/src/pages` | Overview, Monitor, Analytics, Devices, Threats, Incidents, Defense, Settings |
 
 ## Detection methodology
 
@@ -52,6 +56,12 @@ React 19, TypeScript, Vite, React Router, Lucide and Recharts provide the dashbo
 | Uncorrelated replies | 5 replies within 10 seconds after 5-second warmup, request correlation window 5 seconds | Low severity/confidence; missing requests are incomplete visibility, not proof; gratuitous replies excluded |
 
 Default cooldown is 60 seconds. Findings retain rule, source, interface/session, timestamps, MAC comparisons, packet references, reason, confidence and investigation status. All remain `suspicious_observation`. Exact thresholds and severity logic are documented in PHASE5.md and implemented in `backend/detection/rules.py`.
+
+## Phase 9 analytics
+
+The analytics dashboard summarizes actual persisted ARP observations and distinguishes live capture from offline PCAP replay. It adds request/reply counts, address and mapping aggregates, time buckets, capture sessions, queue-drop indicators, frequency heuristics, and JSON/CSV summary exports. Statistical signals are not security-rule findings or confirmed attacks. See [PHASE9.md](PHASE9.md) for schemas, algorithms, API contracts, and limitations.
+
+Phase 10 adds bounded metadata-only `.pcap`/`.pcapng` analysis, descriptive session comparisons, and an administrator-approved immutable ARP baseline with audit history. Uploaded packet payloads are not retained, and uploads/baselines do not enter live inventory or alert workflows. See [PHASE10.md](PHASE10.md) and [PHASE10_AUDIT.md](PHASE10_AUDIT.md) for the audit, API, validation limits, and remaining roadmap.
 
 ## Boundaries and future work
 

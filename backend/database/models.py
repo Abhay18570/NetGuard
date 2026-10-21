@@ -160,3 +160,59 @@ class IncidentAudit(Base):
     previous_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     new_status: Mapped[str] = mapped_column(String(20))
     details: Mapped[dict] = mapped_column(JSON)
+
+
+class AnalyticsObservation(Base):
+    """Idempotent, passive ARP observations retained for aggregate analysis."""
+    __tablename__ = 'analytics_observations'
+    packet_id: Mapped[str] = mapped_column(String(256), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(128), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String(8))
+    interface: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    timestamp: Mapped[str] = mapped_column(String(40))
+    operation: Mapped[str] = mapped_column(String(8))
+    sender_ip: Mapped[str] = mapped_column(String(15))
+    sender_mac: Mapped[str] = mapped_column(String(17))
+    target_ip: Mapped[str] = mapped_column(String(15))
+    target_mac: Mapped[str] = mapped_column(String(17))
+    __table_args__ = (CheckConstraint("source IN ('live','offline')"),
+                      CheckConstraint("operation IN ('Request','Reply')"),
+                      CheckConstraint("(source = 'live' AND interface IS NOT NULL) OR (source = 'offline' AND interface IS NULL)"),
+                      Index('ix_analytics_filter_time', 'source', 'session_id', 'timestamp'))
+
+
+class AnalyticsSession(Base):
+    __tablename__ = 'analytics_sessions'
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    source: Mapped[str] = mapped_column(String(8))
+    interface: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    state: Mapped[str] = mapped_column(String(20))
+    started_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    ended_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class AnalyticsBaseline(Base):
+    """Immutable analyst-approved robust feature snapshot for one completed session."""
+    __tablename__ = 'analytics_baselines'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(128), index=True)
+    source: Mapped[str] = mapped_column(String(8))
+    created_at: Mapped[str] = mapped_column(String(40))
+    created_by: Mapped[str] = mapped_column(String(120))
+    reason: Mapped[str] = mapped_column(String(500))
+    sample_count: Mapped[int] = mapped_column(Integer)
+    features: Mapped[dict] = mapped_column(JSON)
+    method_version: Mapped[str] = mapped_column(String(32), default='robust-session-baseline-1.0')
+    __table_args__ = (CheckConstraint("source IN ('live','offline')"), CheckConstraint('sample_count > 0'),
+                      Index('ix_analytics_baseline_session', 'session_id', 'created_at'))
+
+
+class AnalyticsBaselineAudit(Base):
+    __tablename__ = 'analytics_baseline_audit'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    baseline_id: Mapped[str] = mapped_column(ForeignKey('analytics_baselines.id', ondelete='RESTRICT'), index=True)
+    action: Mapped[str] = mapped_column(String(20))
+    actor: Mapped[str] = mapped_column(String(120))
+    reason: Mapped[str] = mapped_column(String(500))
+    timestamp: Mapped[str] = mapped_column(String(40))

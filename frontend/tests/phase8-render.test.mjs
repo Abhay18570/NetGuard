@@ -10,7 +10,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { createServer } from 'vite'
 import react from '@vitejs/plugin-react'
 // Static rendering verifies component composition only, not browser interactions.
-for (const page of ['Overview', 'Monitor', 'Devices', 'Threats', 'Incidents', 'Defense', 'Settings']) {
+for (const page of ['Overview', 'Monitor', 'Analytics', 'Devices', 'Threats', 'Incidents', 'Defense', 'Settings']) {
   test(`${page} renders with real providers without fabricating observations`, async () => {
     const cacheDir = await mkdtemp(join(tmpdir(), 'netguard-render-'))
     const server = await createServer({ cacheDir, root: fileURLToPath(new URL('../', import.meta.url)), configFile: false, plugins: [react()], server: { middlewareMode: true, hmr: false, watch: null }, optimizeDeps: { noDiscovery: true, include: [] }, logLevel: 'silent' })

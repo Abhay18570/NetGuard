@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, Link } from 'react-router-dom'
-import { Shield, LayoutDashboard, Radio, Network, ScanLine, History, ShieldCheck, Settings, Menu, X } from 'lucide-react'
+import { Shield, LayoutDashboard, Radio, Network, ScanLine, History, ShieldCheck, Settings, Menu, X, ChartNoAxesCombined } from 'lucide-react'
 import { useMonitor } from '../context/useMonitor'
-const navigation = [ ['/', 'Overview', LayoutDashboard], ['/monitor', 'Live ARP Monitor', Radio], ['/devices', 'Network Devices', Network], ['/threats', 'Threat Detection', ScanLine], ['/incidents', 'Incident History', History], ['/defense', 'Defense Center', ShieldCheck], ['/settings', 'Settings', Settings] ] as const
+const navigation = [ ['/', 'Overview', LayoutDashboard], ['/monitor', 'Live ARP Monitor', Radio], ['/analytics', 'Network Analytics', ChartNoAxesCombined], ['/devices', 'Network Devices', Network], ['/threats', 'Threat Detection', ScanLine], ['/incidents', 'Incident History', History], ['/defense', 'Defense Center', ShieldCheck], ['/settings', 'Settings', Settings] ] as const
 export function Layout() {
   const [open, setOpen] = useState(false)
   const menu = useRef<HTMLButtonElement>(null)
