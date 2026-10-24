@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "durationSeconds": 2.9065442499995697,
+  "checks": [
+    "direct Flask health",
+    "Vite same-origin API",
+    "offline PCAP inventory/findings/alerts/incidents",
+    "authorized incident lifecycle/audit/exports",
+    "Socket.IO events and reconnect REST reconciliation",
+    "backend restart persistence",
+    "workspace database unchanged",
+    "hostname and origin rejection"
+  ]
+}

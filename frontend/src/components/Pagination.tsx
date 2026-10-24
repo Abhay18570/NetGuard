@@ -1,0 +1,3 @@
+export function Pagination({ offset, total, loading, onChange }: { offset: number; total: number; loading: boolean; onChange: (offset: number) => void }) {
+  return <div className="card-foot pagination"><span>{loading ? 'Loading…' : `${total ? Math.min(offset + 1, total) : 0}–${Math.min(offset + 25, total)} of ${total}`}</span><div><button className="text-button" disabled={loading || offset === 0} onClick={() => onChange(Math.max(0, offset - 25))}>Previous</button><button className="text-button" disabled={loading || offset + 25 >= total} onClick={() => onChange(offset + 25)}>Next</button></div></div>
+}
