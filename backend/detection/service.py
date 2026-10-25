@@ -82,11 +82,15 @@ class DetectionService:
 
     def process(self, packet):
         p = dict(packet)
+        if p.get('protocol') not in (None, 'ARP'):
+            return []
         if p.get('source') not in ('live', 'offline') or p.get('operation') not in ('Request', 'Reply'):
             raise ValueError('Invalid packet source or operation')
         for key in ('id', 'sessionId'):
             if not isinstance(p.get(key), str) or not p[key] or len(p[key]) > 256:
                 raise ValueError('Invalid packet identity')
+        if not all(isinstance(p.get(key), str) for key in ('senderIp', 'senderMac', 'targetIp', 'targetMac')):
+            raise ValueError('ARP packet is missing normalized sender or target fields')
         if p['source'] == 'live' and (not isinstance(p.get('interface'), str) or not p['interface'] or len(p['interface']) > 128):
             raise ValueError('Invalid live interface')
         if p['source'] == 'offline' and p.get('interface') is not None:

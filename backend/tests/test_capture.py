@@ -5,11 +5,12 @@ from threading import Event, Thread
 import struct
 import time
 import pytest
+from scapy.layers.dns import DNS, DNSQR
 from scapy.layers.l2 import ARP, Ether
-from scapy.layers.inet import IP
+from scapy.layers.inet import IP, TCP, UDP
 from backend.app import create_app
 from backend.capture.engine import ScapyCapture
-from backend.capture.packets import PacketBuffer, parse_arp
+from backend.capture.packets import PacketBuffer, parse_arp, parse_protocol_packet
 from backend.capture.pcap import read_pcap
 from backend.errors import APIError
 from backend.services.monitor import MonitorService
@@ -140,6 +141,47 @@ def test_live_start_stop_packets_and_socket_contract(live_app):
     assert client.get('/api/devices').json['items'][0]['observationCount'] == 4
     for resource in ('alerts', 'incidents'):
         assert client.get('/api/' + resource).json['items'] == []
+    socket.disconnect()
+
+
+def test_tcp_udp_and_dns_socket_packet_contract(live_app):
+    app, capture = live_app
+    socket = app.extensions['socketio'].test_client(app)
+    client = app.test_client()
+    response = client.post('/api/monitor/start', json={
+        'interface': 'en0', 'protocols': ['TCP', 'UDP', 'DNS'],
+    })
+    assert response.status_code == 200
+
+    packets = [
+        Ether() / IP(src='192.0.2.1', dst='198.51.100.1') / TCP(sport=12345, dport=443, flags='S'),
+        Ether() / IP(src='192.0.2.2', dst='198.51.100.2') / UDP(sport=12346, dport=123),
+        Ether() / IP(src='192.0.2.3', dst='198.51.100.3') / UDP(sport=53000, dport=53)
+        / DNS(rd=1, qd=DNSQR(qname='example.com')),
+    ]
+    for packet in packets:
+        packet.time = 1700000000.125
+        capture.receive(packet)
+
+    events = [event['args'][0] for event in socket.get_received() if event['name'] == 'arp_packet']
+    assert [event['packet']['protocol'] for event in events] == ['TCP', 'UDP', 'DNS']
+    assert all(event['version'] == 1 for event in events)
+    assert all('senderIp' not in event['packet'] for event in events)
+    assert all('targetIp' not in event['packet'] for event in events)
+    assert events[0]['packet']['sourceIp'] == '192.0.2.1'
+    assert events[0]['packet']['destinationPort'] == 443
+    assert events[0]['packet']['operation'] == 'Request'
+    assert events[0]['packet']['flags'] == ['SYN']
+    assert events[1]['packet']['byteCount'] == 0
+    assert events[2]['packet']['operation'] == 'Query'
+    assert events[2]['packet']['queryName'] == 'example.com.'
+    assert events[2]['packet']['transport'] == 'UDP'
+    assert app.extensions['analytics'].drain()
+    app.extensions['detection'].drain()
+    assert app.extensions['analytics'].summary()['totalPackets'] == 0
+    assert app.extensions['detection'].status()['failedPackets'] == 0
+    assert all(parse_protocol_packet(packet, 'en0', 'live', ('ARP', 'TCP', 'UDP', 'DNS'))['protocol'] == expected
+               for packet, expected in zip(packets, ('TCP', 'UDP', 'DNS')))
     socket.disconnect()
 
 

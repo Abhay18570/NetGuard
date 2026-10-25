@@ -53,6 +53,12 @@ class AnalyticsService:
                 if item is None:
                     return
                 source = item.get('source')
+                if item.get('protocol') not in (None, 'ARP'):
+                    continue
+                if not all(isinstance(item.get(key), str)
+                           for key in ('senderIp', 'senderMac', 'targetIp', 'targetMac')):
+                    logger.warning('Analytics skipped an ARP observation missing normalized address fields')
+                    continue
                 if source not in ('live', 'offline') or (source == 'offline' and item.get('interface') is not None):
                     continue
                 with self.db.transaction(write=True) as db:

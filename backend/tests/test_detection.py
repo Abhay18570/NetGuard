@@ -290,6 +290,13 @@ def test_arp_probe_ignored_without_failure(service):
     assert service.status()['state'] == 'ready'
 
 
+def test_non_arp_packet_is_not_processed_as_an_arp_claim(service):
+    tcp_packet = {'id': 'test:tcp:1', 'sessionId': 'test', 'source': 'offline',
+                  'interface': None, 'protocol': 'TCP', 'operation': 'Request'}
+    assert service.process(tcp_packet) == []
+    assert service.status()['state'] == 'ready'
+
+
 def test_passive_capture_stays_running_when_detector_fails(monkeypatch):
     from threading import Event
     sent = Event()

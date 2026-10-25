@@ -6,7 +6,33 @@ type RecordValue = Record<string, unknown>
 function record(value: unknown): value is RecordValue { return !!value && typeof value === 'object' && !Array.isArray(value) }
 function strings(value: RecordValue, keys: string[]) { return keys.every(key => typeof value[key] === 'string') }
 function integer(value: unknown): value is number { return Number.isInteger(value) && Number(value) >= 0 }
-export const isPacket = (value: unknown): value is Packet => record(value) && strings(value, ['id', 'sessionId', 'timestamp', 'senderIp', 'senderMac', 'targetIp', 'targetMac']) && integer(value.sequence) && value.sequence > 0 && ['Request', 'Reply', 'Packet', 'Query', 'Response'].includes(String(value.operation)) && ['live', 'offline'].includes(String(value.source)) && (value.source === 'offline' ? value.interface === null : typeof value.interface === 'string' && value.interface.length > 0) && value.status === 'Not analyzed'
+function endpointFields(value: RecordValue) { return strings(value, ['sourceIp', 'destinationIp']) && integer(value.sourcePort) && value.sourcePort <= 65535 && integer(value.destinationPort) && value.destinationPort <= 65535 }
+export const isPacket = (value: unknown): value is Packet => {
+  if (!record(value) || !strings(value, ['id', 'sessionId', 'timestamp']) || !integer(value.sequence) || value.sequence === 0
+    || !['live', 'offline'].includes(String(value.source))
+    || !(value.source === 'offline' ? value.interface === null : typeof value.interface === 'string' && value.interface.length > 0)
+    || value.status !== 'Not analyzed') return false
+
+  const protocol = value.protocol ?? 'ARP'
+  if (!['ARP', 'TCP', 'UDP', 'DNS'].includes(String(protocol))) return false
+  if (protocol === 'ARP') {
+    return ['Request', 'Reply'].includes(String(value.operation))
+      && strings(value, ['senderIp', 'senderMac', 'targetIp', 'targetMac'])
+  }
+  if (!endpointFields(value)) return false
+  if (protocol === 'TCP') {
+    return ['Request', 'Reply', 'Packet'].includes(String(value.operation))
+      && Array.isArray(value.flags) && value.flags.length > 0 && value.flags.every(flag => typeof flag === 'string')
+  }
+  if (protocol === 'UDP') {
+    return value.operation === 'Packet' && integer(value.byteCount)
+  }
+  return (value.operation === 'Query' || value.operation === 'Response')
+    && (typeof value.queryName === 'string' || value.queryName === null)
+    && (typeof value.queryType === 'string' || value.queryType === null)
+    && (typeof value.responseCode === 'string' || value.responseCode === null)
+    && (value.transport === 'TCP' || value.transport === 'UDP')
+}
 export const isDevice = (value: unknown): value is Device => record(value) && strings(value, ['id', 'ip', 'mac', 'hostname', 'firstSeen', 'lastSeen', 'scope', 'lastSessionId']) && typeof value.trusted === 'boolean'
   && integer(value.observationCount) && value.observationCount > 0 && (value.trustedMappingId === null || typeof value.trustedMappingId === 'string')
   && (value.source === 'live' ? typeof value.interface === 'string' : value.source === 'offline' && value.interface === null && !value.trusted && value.trustedMappingId === null)

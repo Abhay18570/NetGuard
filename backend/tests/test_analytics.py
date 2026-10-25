@@ -32,6 +32,16 @@ def test_duplicate_persistence_and_offline_replay_isolation():
     analytics.close()
 
 
+def test_non_arp_packet_is_not_persisted_as_an_arp_observation():
+    app = create_app({'TESTING': True, 'DATABASE_URL': 'sqlite://'})
+    analytics = app.extensions['analytics']
+    analytics.enqueue({'id': 'tcp:1', 'sessionId': 'tcp', 'sequence': 1, 'source': 'offline',
+                       'interface': None, 'protocol': 'TCP', 'operation': 'Request'})
+    assert analytics.drain()
+    assert app.test_client().get('/api/analytics/summary').json['totalPackets'] == 0
+    analytics.close()
+
+
 def test_mapping_changes_and_window_boundaries():
     app = create_app({'TESTING': True, 'DATABASE_URL': 'sqlite://'})
     analytics = app.extensions['analytics']
