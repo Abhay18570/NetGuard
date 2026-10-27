@@ -1,7 +1,7 @@
 """Strict, bounded classic Ethernet PCAP import. Never transmits replay data."""
 from decimal import Decimal
 import struct
-from backend.capture.packets import parse_arp
+from backend.capture.packets import parse_protocol_packet
 from backend.errors import APIError
 
 MAGICS = {b'\xd4\xc3\xb2\xa1': ('<', 1_000_000),
@@ -44,7 +44,7 @@ def read_pcap(data, max_bytes=5 * 1024 * 1024, max_records=10000):
         try:
             frame = Ether(raw)
             frame.time = Decimal(seconds) + Decimal(fraction) / precision
-            parsed = parse_arp(frame, None, 'offline')
+            parsed = parse_protocol_packet(frame, None, 'offline', ('ARP', 'TCP', 'UDP', 'DNS'))
             # Scapy may leave truncated ARP payloads as Raw. Reject these rather
             # than silently accepting a damaged record as an empty capture.
             arp_frame = int(frame.type) == 0x0806 or ARP in frame
@@ -57,5 +57,5 @@ def read_pcap(data, max_bytes=5 * 1024 * 1024, max_records=10000):
         except (ValueError, TypeError, IndexError, struct.error) as error:
             raise APIError('invalid_pcap', 'The PCAP contains an invalid Ethernet frame.') from error
     if not packets:
-        raise APIError('no_arp_packets', 'The PCAP contains no supported ARP requests or replies.', 422)
+        raise APIError('no_arp_packets', 'The PCAP contains no supported ARP, TCP, UDP, or DNS packets.', 422)
     return packets

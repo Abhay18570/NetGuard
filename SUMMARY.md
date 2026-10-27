@@ -1,10 +1,10 @@
 # NetGuard AI — Project Summary and Technical Walkthrough
 
-> **Implementation-based description.** This document describes the code currently in this repository. “Finding” and “anomaly” mean evidence worth review; neither is a confirmed attack verdict. Live capture, stored ARP analytics, rule detections, and uploaded-PCAP metadata analysis are separate paths and are identified as such below.
+> **Implementation-based description.** This document describes the code currently in this repository. “Finding” and “anomaly” mean evidence worth review; neither is a confirmed attack verdict. Live capture, persisted protocol analytics, ARP rule detections, and uploaded-PCAP metadata analysis are separate paths and are identified as such below.
 
 ## 1. Project overview
 
-NetGuard is a local web application for passive ARP observation, device-mapping history, explainable suspicious-activity findings, and incident investigation. An operator can select one local interface for receive-only ARP capture or explicitly import a classic Ethernet PCAP for isolated ARP replay. The application also offers a separate bounded PCAP/PCAPNG metadata-analysis upload. It does not transmit packets, block devices, change network configuration, or prove that suspicious observations are attacks.
+NetGuard is a local web application for passive ARP/TCP/UDP/DNS observation and analytics, ARP device-mapping history, explainable suspicious-activity findings, and incident investigation. An operator can select protocols for receive-only capture on one local interface or import a classic Ethernet PCAP for isolated replay. The application also offers a separate bounded PCAP/PCAPNG metadata-analysis upload. It does not transmit packets, block devices, change network configuration, or prove that suspicious observations are attacks.
 
 The practical problem is that IP-to-MAC claims on a local network are unauthenticated. A changed or conflicting claim can be useful evidence, but DHCP changes, failover, replacement devices, missed packets, and limited interface visibility can create similar observations. NetGuard keeps source/session context and supporting evidence so a person can investigate.
 
@@ -103,7 +103,7 @@ flowchart TD
 
 | Data source | Exact path | Origin | Format | Purpose | Processing code | Verified status |
 |---|---|---|---|---|---|---|
-| Live interface input | No persisted source file; selected OS interface | Traffic visible to an operator-selected local interface | Ethernet/ARP records received by Scapy | Monitor, mapping inventory, rule findings, stored ARP analytics | [`backend/capture/engine.py`](backend/capture/engine.py), [`backend/capture/packets.py`](backend/capture/packets.py), [`backend/services/monitor.py`](backend/services/monitor.py) | Implemented; genuine live reception depends on OS adapter and capture permissions and was not verified by this document task. |
+| Live interface input | No persisted source file; selected OS interface | Traffic visible to an operator-selected local interface | Selected ARP/TCP/UDP/DNS records received and decoded by Scapy | Monitor and protocol analytics; ARP also feeds mapping inventory and ARP rules | [`backend/capture/engine.py`](backend/capture/engine.py), [`backend/capture/packets.py`](backend/capture/packets.py), [`backend/services/monitor.py`](backend/services/monitor.py) | Implemented; genuine live reception depends on OS adapter and capture permissions and was not verified by this document task. |
 | Offline ARP fixture | `backend/tests/fixtures/offline-arp.pcap` | Repository test fixture; synthetic | Classic Ethernet PCAP | Deterministic parser/replay tests and explicitly labeled demo | [`backend/capture/pcap.py`](backend/capture/pcap.py) | Synthetic; documentation says it is not from the user’s network. |
 | Additional ARP fixtures | `backend/tests/fixtures/offline-arp-updates.pcap`, `detection-conflict.pcap`, `incident-correlated.pcap`, `truncated.pcap` | Repository test fixtures; synthetic | Classic Ethernet PCAP | Mapping-change, detection, incident, and malformed-input tests | `backend/tests/fixtures/README.md`, backend capture and service tests | Synthetic test evidence only; not automatically loaded. |
 | Generic capture uploaded to analytics | User-selected file at request time; no repository source file | User upload | `.pcap` or `.pcapng` | Transient protocol, endpoint, flow, size, and time-window metadata | [`backend/analytics/routes.py`](backend/analytics/routes.py), [`backend/analytics/pcap_analysis.py`](backend/analytics/pcap_analysis.py) | Real computation on uploaded bytes is implemented. No user capture was supplied or independently verified here; result is not persisted. |
@@ -126,9 +126,9 @@ The UI’s empty states are generally explicit rather than populated from sample
 
 Live capture requires the host’s packet-capture access. On macOS the project documentation describes `/dev/bpf*` access; other operating systems have their own capture-driver and privilege requirements. Interface enumeration does not prove capture permissions. Errors are represented as capture errors; the application should not label an unsuccessful open as active. No actual interface capture was performed during this documentation task.
 
-### 7.2 Offline ARP replay
+### 7.2 Offline protocol replay
 
-The Monitor page uploads one `.pcap` to `POST /api/monitor/replay`. The backend reads the bounded multipart file, validates the classic PCAP header, Ethernet link type, record count and lengths, parses supported ARP records, then starts an offline replay session ([`backend/routes.py`](backend/routes.py), [`backend/capture/pcap.py`](backend/capture/pcap.py)). Non-ARP frames are skipped. PCAPNG is not supported in this replay endpoint. Replay is explicitly offline, does not open a live capture socket, and feeds the existing ARP mapping/rule/analytics pipelines with source `offline`.
+The Monitor page uploads one `.pcap` to `POST /api/monitor/replay`. The backend reads the bounded multipart file, validates the classic PCAP header, Ethernet link type, record count and lengths, parses supported ARP/TCP/UDP/DNS records, then starts an offline replay session ([`backend/routes.py`](backend/routes.py), [`backend/capture/pcap.py`](backend/capture/pcap.py)). Unsupported frames are skipped. PCAPNG is not supported in this replay endpoint. Replay is explicitly offline, does not open a live capture socket, and sends supported observations through protocol analytics; only ARP contributes to mapping inventory and ARP rules.
 
 ### 7.3 General offline PCAP/PCAPNG analytics
 
@@ -145,6 +145,8 @@ No public security dataset or model training input is configured. Repository PCA
 ### 8.1 ARP observation schema
 
 The monitor packet parser emits a normalized record containing an ID, session ID, sequence, timestamp, interface, source (`live`/`offline`), ARP operation, sender IP/MAC, target IP/MAC, and status `Not analyzed` ([`backend/capture/packets.py`](backend/capture/packets.py); persistence model: [`backend/database/models.py`](backend/database/models.py)). In the existing monitor/rule/inventory path, this is an ARP record, not a general packet schema.
+
+TCP, UDP, and DNS parsers emit protocol-specific normalized records with source/destination IPs and ports; TCP may include flags, UDP may include byte length, and DNS may include a decoded query name/type, response code, and transport. These metadata fields are persisted in `protocol_analytics_observations`, not copied into the ARP mapping/detection model.
 
 | Field | Meaning and use | Used by existing detection? |
 |---|---|---|
@@ -174,15 +176,15 @@ The analyzer does not retain payloads, perform application-protocol inspection, 
 
 ### Stage A — Input acquisition
 
-Live interface capture and offline ARP replay converge on normalized ARP records. The general metadata analyzer is a distinct, upload-response-only branch.
+Live interface capture and offline classic-PCAP replay converge on normalized protocol records. The general metadata analyzer remains a separate upload-response-only branch.
 
 ### Stage B — Parsing
 
-Live capture uses Scapy’s layer-2 listener filtered to ARP. Classic-PCAP replay validates Ethernet PCAP framing and parses supported ARP. General offline analysis uses Scapy `PcapReader` for `.pcap` and `.pcapng` and recognizes ARP, IPv4, IPv6, TCP, UDP, and ICMP metadata. Unknown protocols are counted as `Other` where a record is readable.
+Live capture uses Scapy’s layer-2 listener filtered to selected protocols; DNS is decoded from UDP/TCP traffic. Classic-PCAP replay validates Ethernet PCAP framing and parses supported ARP/TCP/UDP/DNS. General offline analysis uses Scapy `PcapReader` for `.pcap` and `.pcapng` and recognizes ARP, IPv4, IPv6, TCP, UDP, and ICMP metadata. Unknown protocols are counted as `Other` where a record is readable.
 
 ### Stage C — Data cleaning and identity
 
-The replay parser validates file headers, link type, record sizes, timestamps, record count, and supported ARP fields. General analysis bounds file bytes, count, elapsed processing, timestamp and packet length; record-level parsing errors contribute to `ignoredCount`. ARP normalization validates addresses and timestamps. Analytics observations use packet IDs as unique primary keys, and the detection service uses receipts/fingerprints to reject duplicate packet IDs and identity reuse with conflicting evidence. The generic upload analyzer is not persisted and does not run through those database receipts.
+The replay parser validates file headers, link type, record sizes, timestamps, record count, and supported parsed protocol fields. General analysis bounds file bytes, count, elapsed processing, timestamp and packet length; record-level parsing errors contribute to `ignoredCount`. Analytics observations use packet IDs as unique primary keys, and the ARP detection service uses receipts/fingerprints to reject duplicate packet IDs and identity reuse with conflicting evidence. The generic upload analyzer is not persisted and does not run through those database receipts.
 
 ### Stage D — Feature engineering
 
@@ -266,11 +268,12 @@ Important API contracts include:
 |---|---|
 | `GET /api/interfaces` | Discovered OS interfaces |
 | `GET /api/monitor/status`, `POST /api/monitor/start`, `POST /api/monitor/stop` | Capture lifecycle |
-| `POST /api/monitor/replay`, `GET /api/packets` | Classic-PCAP ARP replay and bounded packet history |
+| `POST /api/monitor/replay`, `GET /api/packets` | Classic-PCAP ARP/TCP/UDP/DNS replay and bounded packet history |
 | `GET /api/devices`, trust endpoints | Observed mappings and separately administered trusted mappings |
 | `GET /api/alerts`, `GET /api/findings/<id>`, `GET /api/detection/status` | Security findings, evidence, processing state |
 | `GET/POST /api/incidents...` | Incident list, detail, audited workflow and exports |
-| `GET /api/analytics/summary`, `/sessions`, `/top`, `/timeseries`, `/anomalies`, `/report` | Persisted ARP analytics |
+| `GET /api/analytics/dashboard` | Persisted protocol-aware ARP/TCP/UDP/DNS analytics with protocol and source filtering |
+| `GET /api/analytics/summary`, `/sessions`, `/top`, `/timeseries`, `/anomalies`, `/report` | Persisted aggregate analytics and the legacy ARP endpoints |
 | `POST /api/analytics/pcap/analyze` | Transient general PCAP/PCAPNG metadata analysis |
 | `GET /api/analytics/compare`, `/baselines...`; `POST /api/analytics/baselines` | Descriptive session/baseline comparison and audited baseline approval |
 
@@ -330,7 +333,7 @@ No tests, lint, type check, or build were run as part of this documentation task
 
 ## 17. Current limitations
 
-- The persisted inventory, rules, and primary analytics are ARP-focused; they do not represent all network protocols.
+- The persisted inventory and detection rules remain ARP-focused. Protocol analytics include ARP, TCP, UDP, and DNS only when those packets are selected/captured and successfully decoded.
 - Live observations depend on interface visibility, traffic, OS support, and capture permissions. A quiet interface is not proof of a working or failed capture.
 - Monitor replay supports classic Ethernet PCAP only and skips non-ARP frames.
 - General PCAP/PCAPNG analysis is bounded and metadata-only, transient, and separate from persisted session comparison, alerts, inventory, and incidents.
@@ -363,7 +366,7 @@ Adaptive learning, model deployment, graph analytics, and attack-confirmation au
 
 ## 20. Conclusion
 
-NetGuard combines passive ARP collection, scoped mapping history, deterministic suspicious-observation rules, persisted alerts/incidents, and ARP analytics. An additional offline analyzer summarizes general PCAP/PCAPNG metadata without storing payloads, but its result is currently transient and isolated from the existing security workflow. The system is best understood as an evidence-collection and human-triage aid for an academic/local demonstration—not a validated attack classifier or an active defense product.
+NetGuard combines passive ARP/TCP/UDP/DNS collection, scoped ARP mapping history, deterministic ARP suspicious-observation rules, persisted alerts/incidents, and protocol-aware analytics. An additional offline analyzer summarizes general PCAP/PCAPNG metadata without storing payloads; only classic-PCAP replay enters the persisted capture analytics path. TCP/UDP directional tuples are observational rather than reconstructed flows, and DNS fields depend on packet decoding. The system is best understood as an evidence-collection and human-triage aid for an academic/local demonstration—not a validated attack classifier or an active defense product.
 
 ## 21. Glossary
 
@@ -382,4 +385,3 @@ NetGuard combines passive ARP collection, scoped mapping history, deterministic 
 | False negative | Suspicious activity that available observations/rules fail to flag. |
 | Provenance | Context describing where, when, and through which source/session evidence entered the system. |
 | Isolation Forest | An unsupervised tree-based anomaly algorithm; **not implemented** in this repository. |
-

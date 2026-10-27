@@ -86,6 +86,17 @@ def test_invalid_arp_address_ignored():
     assert parse_arp(packet, 'en0', 'live') is None
 
 
+@pytest.mark.parametrize(('raw_flags', 'expected'), [
+    (0, ['NONE']), ('P', ['PSH']), ('SA', ['SYN-ACK']), ('FA', ['ACK', 'FIN']),
+])
+def test_tcp_flag_metadata_matches_observed_flags(raw_flags, expected):
+    from backend.capture.packets import parse_tcp
+    packet = Ether(src='02:00:00:00:00:01', dst='02:00:00:00:00:02') / IP(
+        src='192.0.2.1', dst='198.51.100.1') / TCP(sport=1200, dport=443, flags=raw_flags)
+    packet.time = 1700000000.125
+    assert parse_tcp(packet, 'en0', 'live')['flags'] == expected
+
+
 def test_bounded_thread_safe_buffer():
     buffer = PacketBuffer(30)
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -175,14 +186,51 @@ def test_tcp_udp_and_dns_socket_packet_contract(live_app):
     assert events[1]['packet']['byteCount'] == 0
     assert events[2]['packet']['operation'] == 'Query'
     assert events[2]['packet']['queryName'] == 'example.com.'
+    assert events[2]['packet']['queryType'] == 'A'
     assert events[2]['packet']['transport'] == 'UDP'
     assert app.extensions['analytics'].drain()
     app.extensions['detection'].drain()
     assert app.extensions['analytics'].summary()['totalPackets'] == 0
+    protocol_counts = client.get('/api/analytics/dashboard').json['protocolCounts']
+    assert {item['protocol']: item['count'] for item in protocol_counts} == {
+        'ARP': 0, 'TCP': 1, 'UDP': 1, 'DNS': 1,
+    }
     assert app.extensions['detection'].status()['failedPackets'] == 0
     assert all(parse_protocol_packet(packet, 'en0', 'live', ('ARP', 'TCP', 'UDP', 'DNS'))['protocol'] == expected
                for packet, expected in zip(packets, ('TCP', 'UDP', 'DNS')))
     socket.disconnect()
+
+
+def test_offline_pcap_replay_parses_and_persists_tcp_udp_and_dns(tmp_path):
+    from scapy.utils import PcapWriter
+
+    path = tmp_path / 'protocols.pcap'
+    packets = [
+        Ether(src='02:00:00:00:00:01', dst='02:00:00:00:00:02') / IP(src='192.0.2.1', dst='198.51.100.1') / TCP(sport=1200, dport=443, flags='S'),
+        Ether(src='02:00:00:00:00:03', dst='02:00:00:00:00:04') / IP(src='192.0.2.2', dst='198.51.100.2') / UDP(sport=1300, dport=123),
+        Ether(src='02:00:00:00:00:05', dst='02:00:00:00:00:06') / IP(src='192.0.2.3', dst='198.51.100.3') / UDP(sport=53000, dport=53)
+        / DNS(rd=1, qd=DNSQR(qname='offline.example')),
+    ]
+    writer = PcapWriter(str(path), linktype=1, sync=True)
+    for packet in packets:
+        packet.time = 1700000000.125
+        writer.write(packet)
+    writer.close()
+
+    parsed = read_pcap(path.read_bytes())
+    assert [item['protocol'] for item in parsed] == ['TCP', 'UDP', 'DNS']
+    app = create_app({'TESTING': True, 'DATABASE_URL': 'sqlite://', 'REPLAY_INTERVAL': 0})
+    monitor = app.extensions['monitor']
+    monitor.replay(parsed)
+    until(lambda: monitor.status()['state'] == 'completed')
+    assert app.extensions['analytics'].drain()
+    result = app.test_client().get('/api/analytics/dashboard?source=offline').json
+    assert result['totalPackets'] == 3
+    assert {item['protocol']: item['count'] for item in result['protocolCounts']} == {
+        'ARP': 0, 'TCP': 1, 'UDP': 1, 'DNS': 1,
+    }
+    monitor.stop()
+    app.extensions['analytics'].close()
 
 
 def test_one_session_and_new_session_clears_buffer(live_app):

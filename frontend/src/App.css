@@ -39,6 +39,7 @@ body{background:var(--canvas);color:var(--ink)}
 .analytics-page { display: grid; gap: 1rem; }
 .analytics-page .page-heading { display: flex; justify-content: space-between; align-items: end; gap: 1rem; }
 .analytics-page .page-heading label { display: grid; gap: .35rem; color: #527064; font-size: .85rem; }
+.analytics-selectors { display: flex; flex-wrap: wrap; gap: .75rem; }
 .analytics-page select { border: 1px solid #cbded3; border-radius: 8px; padding: .55rem .75rem; background: white; color: #1c3d30; }
 .analytics-scope,.analytics-note { color: #587166; font-size: .85rem; }
 .analytics-metrics { display: grid; grid-template-columns: repeat(auto-fit,minmax(145px,1fr)); gap: .75rem; }
@@ -48,4 +49,4 @@ body{background:var(--canvas);color:var(--ink)}
 .analytics-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1rem; }
 .analytics-panel h2 { color: #234a37; font-size: 1.05rem; margin: 0 0 .75rem; }
 .analytics-panel p { color: #547064; }
-@media(max-width:760px) { .analytics-grid { grid-template-columns: 1fr; } .analytics-page .page-heading { align-items: start; flex-direction: column; } }
+@media(max-width:760px) { .analytics-grid { grid-template-columns: 1fr; } .analytics-page .page-heading { align-items: start; flex-direction: column; } .analytics-selectors { width: 100%; } .analytics-selectors label,.analytics-selectors select { width: 100%; } }

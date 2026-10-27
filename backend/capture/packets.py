@@ -111,13 +111,21 @@ def parse_tcp(packet, interface, source):
         if ip is None:
             return None
         tcp = packet[TCP]
-        flags = []
         value = int(tcp.flags)
-        for name, bit in (('SYN', 0x02), ('SYN-ACK', 0x12), ('ACK', 0x10), ('FIN', 0x01), ('RST', 0x04)):
-            if value & bit:
+        if value & 0x02 and value & 0x10:
+            flags = ['SYN-ACK']
+        else:
+            flags = []
+            for mask, name in ((0x02, 'SYN'), (0x10, 'ACK')):
+                if value & mask:
+                    flags.append(name)
+        for mask, name in ((0x01, 'FIN'), (0x04, 'RST'), (0x08, 'PSH'),
+                           (0x20, 'URG'), (0x40, 'ECE'), (0x80, 'CWR'),
+                           (0x100, 'NS')):
+            if value & mask:
                 flags.append(name)
         if not flags:
-            flags.append('ACK')
+            flags.append('NONE')
         timestamp = _timestamp(packet)
         if timestamp is None:
             return None
@@ -187,10 +195,14 @@ def parse_dns(packet, interface, source):
         if ip is None:
             return None
         transport = 'UDP' if UDP in packet else 'TCP' if TCP in packet else 'UNKNOWN'
-        query_name = getattr(getattr(dns, 'qd', None), 'qname', None)
+        question = dns.qd[0] if dns.qd else None
+        query_name = getattr(question, 'qname', None)
         if isinstance(query_name, bytes):
             query_name = query_name.decode('utf-8', 'replace')
-        qtype = getattr(getattr(dns, 'qd', None), 'qtype', None)
+        qtype = getattr(question, 'qtype', None)
+        if qtype is not None:
+            from scapy.layers.dns import dnsqtypes
+            qtype = dnsqtypes.get(int(qtype), str(qtype))
         rcode = getattr(dns, 'rcode', None)
         timestamp = _timestamp(packet)
         if timestamp is None:
@@ -228,16 +240,16 @@ def parse_protocol_packet(packet, interface, source, selected_protocols=None):
         if parsed is not None:
             parsed['protocol'] = 'ARP'
             return parsed
+    if 'DNS' in selected:
+        parsed = parse_dns(packet, interface, source)
+        if parsed is not None:
+            return parsed
     if 'TCP' in selected:
         parsed = parse_tcp(packet, interface, source)
         if parsed is not None:
             return parsed
     if 'UDP' in selected:
         parsed = parse_udp(packet, interface, source)
-        if parsed is not None:
-            return parsed
-    if 'DNS' in selected:
-        parsed = parse_dns(packet, interface, source)
         if parsed is not None:
             return parsed
     return None

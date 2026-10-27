@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from backend.app import create_app
-from backend.database.models import AnalyticsObservation, ObservedMapping, TrustedMapping, AnalyticsBaselineAudit
+from backend.database.models import AnalyticsObservation, DetectionFinding, ObservedMapping, TrustedMapping, AnalyticsBaselineAudit
 from backend.analytics.pcap_analysis import analyze_capture
 
 
@@ -10,6 +10,20 @@ def packet(session='sess', sequence=1, source='offline', timestamp='2026-01-01T0
     return {'id': f'{session}:{sequence}', 'sessionId': session, 'sequence': sequence, 'source': source,
             'interface': 'eth0' if source == 'live' else None, 'timestamp': timestamp, 'operation': operation,
             'senderIp': ip, 'senderMac': mac, 'targetIp': '10.0.0.2', 'targetMac': '00:00:00:00:00:00'}
+
+
+def protocol_packet(protocol, sequence, **overrides):
+    value = {'id': f'protocol:{sequence}', 'sessionId': 'protocol-session', 'sequence': sequence,
+             'source': 'offline', 'interface': None, 'protocol': protocol,
+             'timestamp': f'2026-01-01T00:00:{sequence:02d}+00:00',
+             'operation': 'Packet', 'sourceIp': '192.0.2.10',
+             'destinationIp': '198.51.100.20', 'sourcePort': 51000,
+             'destinationPort': 443 if protocol == 'TCP' else 53,
+             'flags': ['SYN'] if protocol == 'TCP' else None,
+             'byteCount': 64, 'queryName': None, 'queryType': None,
+             'responseCode': None, 'transport': None}
+    value.update(overrides)
+    return value
 
 
 def test_empty_dataset_and_filters():
@@ -39,6 +53,79 @@ def test_non_arp_packet_is_not_persisted_as_an_arp_observation():
                        'interface': None, 'protocol': 'TCP', 'operation': 'Request'})
     assert analytics.drain()
     assert app.test_client().get('/api/analytics/summary').json['totalPackets'] == 0
+    analytics.close()
+
+
+def test_protocol_dashboard_persists_and_filters_all_protocols():
+    app = create_app({'TESTING': True, 'DATABASE_URL': 'sqlite://'})
+    analytics = app.extensions['analytics']
+    analytics.enqueue(packet(sequence=1))
+    analytics.enqueue(protocol_packet('TCP', 1, operation='Request'))
+    analytics.enqueue(protocol_packet('TCP', 2, operation='Reply', flags=['SYN-ACK']))
+    analytics.enqueue(protocol_packet('UDP', 3, destinationPort=123))
+    analytics.enqueue(protocol_packet('DNS', 4, operation='Query', queryName='example.com.',
+                                      queryType='A', responseCode='0', transport='UDP'))
+    analytics.enqueue(protocol_packet('DNS', 5, operation='Response', queryName='example.com.',
+                                      queryType='A', responseCode='3', transport='UDP'))
+    assert analytics.drain()
+    with app.extensions['database'].transaction(write=True) as db:
+        db.add(DetectionFinding(
+            id='arp-finding-1', timestamp='2026-01-01T00:00:10+00:00', source='offline',
+            scope='offline::protocol-session', rule_id='arp_test_rule', severity='Medium',
+            payload={'sessionId': 'protocol-session', 'interface': None},
+        ))
+    client = app.test_client()
+
+    all_data = client.get('/api/analytics/dashboard').json
+    assert all_data['totalPackets'] == 6
+    assert {item['protocol']: item['count'] for item in all_data['protocolCounts']} == {
+        'ARP': 1, 'TCP': 2, 'UDP': 1, 'DNS': 2,
+    }
+    assert all_data['metrics']['ARP']['uniqueMacs'] == 2
+    assert all_data['metrics']['TCP']['flowTuples'] == 1
+    assert all_data['metrics']['TCP']['flags'] == {'SYN': 1, 'SYN-ACK': 1}
+    assert all_data['metrics']['TCP']['topDestinationPorts'][0]['service'] == 'HTTPS'
+    assert all_data['metrics']['DNS']['queries'] == 1
+    assert all_data['metrics']['DNS']['responses'] == 1
+    assert all_data['metrics']['DNS']['topDomains'] == [{'key': 'example.com.', 'count': 2}]
+    assert all_data['metrics']['DNS']['queryFailures'] == 1
+    assert all_data['topDestinationPorts'][0]['key'] in ('53/DNS', '443/TCP')
+    assert all_data['timeseries'][0]['protocolCounts']
+    assert all_data['timeseries'][0]['operationCounts']['DNS']['Query'] == 1
+    assert all_data['findings'] == [{
+        'protocol': 'ARP', 'method': 'arp_test_rule', 'severity': 'Medium', 'count': 1,
+    }]
+
+    tcp = client.get('/api/analytics/dashboard?protocol=TCP').json
+    assert tcp['totalPackets'] == 2
+    assert set(tcp['metrics']) == {'TCP'}
+    assert tcp['metrics']['TCP']['uniqueIps'] == 2
+    assert tcp['topSources'] == [{'key': '192.0.2.10', 'count': 2}]
+    assert tcp['findings'] == []
+    assert client.get('/api/analytics/dashboard?protocol=ARP&sessionId=protocol-session').json['findings'] == all_data['findings']
+    dns = client.get('/api/analytics/dashboard?protocol=DNS&source=live').json
+    assert dns['totalPackets'] == 0 and dns['metrics']['DNS']['queries'] == 0
+    assert client.get('/api/analytics/dashboard?protocol=ICMP').status_code == 400
+    report = client.get('/api/analytics/report?protocol=DNS&format=json')
+    assert report.status_code == 200 and report.json['protocolAnalytics']['metrics']['DNS']['queries'] == 1
+    analytics.close()
+
+
+def test_protocol_dashboard_tolerates_missing_optional_fields_and_empty_data():
+    app = create_app({'TESTING': True, 'DATABASE_URL': 'sqlite://'})
+    analytics = app.extensions['analytics']
+    empty = app.test_client().get('/api/analytics/dashboard?protocol=DNS')
+    assert empty.status_code == 200 and empty.json['metrics']['DNS']['topDomains'] == []
+    analytics.enqueue(protocol_packet('DNS', 1, operation='Query', queryName=None,
+                                       queryType=None, responseCode=None, sourcePort=None,
+                                       destinationPort=None, byteCount=None, flags=None))
+    analytics.enqueue(protocol_packet('UDP', 2, operation='Query'))
+    assert analytics.drain()
+    response = app.test_client().get('/api/analytics/dashboard?protocol=DNS')
+    assert response.status_code == 200
+    assert response.json['totalPackets'] == 1
+    assert response.json['metrics']['DNS']['queries'] == 1
+    assert response.json['metrics']['DNS']['topDomains'] == []
     analytics.close()
 
 

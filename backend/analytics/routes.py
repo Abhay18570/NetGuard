@@ -89,6 +89,15 @@ def summary():
     return jsonify(data)
 
 
+@analytics_api.get('/api/analytics/dashboard')
+def dashboard():
+    f = filters(('protocol',))
+    protocol = request.args.get('protocol', 'all')
+    if protocol not in ('all', 'ARP', 'TCP', 'UDP', 'DNS'):
+        raise APIError('invalid_query', 'protocol must be all, ARP, TCP, UDP, or DNS.')
+    return jsonify(current_app.extensions['analytics'].dashboard(f, protocol))
+
+
 @analytics_api.get('/api/analytics/sessions')
 def sessions():
     page = pagination(('source',))
@@ -171,11 +180,15 @@ def anomalies():
 
 @analytics_api.get('/api/analytics/report')
 def report():
-    f = filters(('format',))
+    f = filters(('format', 'protocol'))
     fmt = request.args.get('format', 'json')
     if fmt not in ('json', 'csv'): raise APIError('invalid_query', 'format must be json or csv.')
+    protocol = request.args.get('protocol', 'all')
+    if protocol not in ('all', 'ARP', 'TCP', 'UDP', 'DNS'):
+        raise APIError('invalid_query', 'protocol must be all, ARP, TCP, UDP, or DNS.')
     data = current_app.extensions['analytics'].summary(f['source'], f['session_id'], f['interface'], f.get('start'), f.get('end'))
-    result = {'generatedAt': datetime.now(timezone.utc).isoformat(), 'captureSource': f['source'], 'sessionId': f['session_id'], 'interface': f['interface'], 'analysisPeriod': {'start': f.get('start'), 'end': f.get('end')}, 'method': 'observed ARP aggregates; frequency threshold heuristics v1.0', 'counts': data, 'limitations': ['ARP-only observations; capture can be incomplete.', 'High frequency is not proof of malicious activity.', 'No labelled evaluation dataset was available; precision, recall, F1, and false-positive rate were not calculated.', 'Isolation Forest is not enabled.']}
+    protocol_data = current_app.extensions['analytics'].dashboard(f, protocol)
+    result = {'generatedAt': datetime.now(timezone.utc).isoformat(), 'captureSource': f['source'], 'protocol': protocol, 'sessionId': f['session_id'], 'interface': f['interface'], 'analysisPeriod': {'start': f.get('start'), 'end': f.get('end')}, 'method': 'persisted ARP, TCP, UDP, and DNS packet metadata; existing detection findings are ARP-specific', 'protocolAnalytics': protocol_data, 'counts': data, 'limitations': ['Analytics include only traffic captured and persisted after protocol-aware analytics were enabled; earlier TCP, UDP, and DNS live events were not retained for backfill.', 'Directional tuples are not reconstructed TCP connections or UDP application flows.', 'DNS fields are available only when Scapy decoded them in captured packets.', 'Frequency and rule findings require analyst review; no labeled evaluation dataset is available.']}
     if fmt == 'json': return jsonify(result)
     output = io.StringIO(); writer = csv.writer(output); writer.writerow(['field', 'value'])
     for key, value in result.items(): writer.writerow([key, json.dumps(value, separators=(',', ':'))])

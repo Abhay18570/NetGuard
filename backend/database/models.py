@@ -182,6 +182,39 @@ class AnalyticsObservation(Base):
                       Index('ix_analytics_filter_time', 'source', 'session_id', 'timestamp'))
 
 
+class ProtocolAnalyticsObservation(Base):
+    """Metadata-only TCP, UDP, and DNS observations for protocol analytics."""
+    __tablename__ = 'protocol_analytics_observations'
+    packet_id: Mapped[str] = mapped_column(String(256), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(128), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    source: Mapped[str] = mapped_column(String(8))
+    interface: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    protocol: Mapped[str] = mapped_column(String(3))
+    timestamp: Mapped[str] = mapped_column(String(40))
+    operation: Mapped[str] = mapped_column(String(12))
+    source_ip: Mapped[str] = mapped_column(String(45))
+    destination_ip: Mapped[str] = mapped_column(String(45))
+    source_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    destination_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    flags: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    byte_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    query_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    query_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    response_code: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    transport: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    __table_args__ = (
+        CheckConstraint("source IN ('live','offline')"),
+        CheckConstraint("protocol IN ('TCP','UDP','DNS')"),
+        CheckConstraint("(source = 'live' AND interface IS NOT NULL) OR (source = 'offline' AND interface IS NULL)"),
+        CheckConstraint("operation IN ('Request','Reply','Packet','Query','Response')"),
+        CheckConstraint('source_port IS NULL OR source_port BETWEEN 0 AND 65535'),
+        CheckConstraint('destination_port IS NULL OR destination_port BETWEEN 0 AND 65535'),
+        Index('ix_protocol_analytics_filter_time', 'protocol', 'source', 'session_id', 'timestamp'),
+        Index('ix_protocol_analytics_destination_port', 'protocol', 'destination_port'),
+    )
+
+
 class AnalyticsSession(Base):
     __tablename__ = 'analytics_sessions'
     id: Mapped[str] = mapped_column(String(128), primary_key=True)

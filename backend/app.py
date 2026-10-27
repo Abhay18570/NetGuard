@@ -67,6 +67,11 @@ def create_app(config=None):
 
     def observe(packet):
         analytics.enqueue(packet)
+        # These downstream services require a normalized ARP claim. Legacy
+        # parsed ARP snapshots may omit protocol, but still carry all four fields.
+        if packet.get('protocol') not in (None, 'ARP') or not all(
+                isinstance(packet.get(key), str) for key in ('senderIp', 'senderMac', 'targetIp', 'targetMac')):
+            return
         detection.enqueue(packet)
         inventory.ingest(packet)
 
